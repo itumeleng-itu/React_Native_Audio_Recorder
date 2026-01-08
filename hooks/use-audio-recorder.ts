@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio, AVPlaybackStatus } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 // Types
@@ -28,7 +28,7 @@ export interface PlaybackState {
 }
 
 const VOICE_NOTES_KEY = 'voice_notes';
-const RECORDINGS_DIR = `${FileSystem.Paths.document.uri}recordings/`;
+const RECORDINGS_DIR = `${FileSystem.documentDirectory}recordings/`;
 
 export function useAudioRecorder() {
     // Recording state
@@ -344,8 +344,15 @@ export function useAudioRecorder() {
 
             // Stop any existing playback
             if (soundRef.current) {
-                await soundRef.current.stopAsync();
-                await soundRef.current.unloadAsync();
+                try {
+                    const status = await soundRef.current.getStatusAsync();
+                    if (status.isLoaded) {
+                        await soundRef.current.stopAsync();
+                        await soundRef.current.unloadAsync();
+                    }
+                } catch (e) {
+                    // ignore errors when stopping
+                }
                 soundRef.current = null;
             }
 
@@ -403,6 +410,9 @@ export function useAudioRecorder() {
         try {
             if (!soundRef.current) return false;
 
+            const status = await soundRef.current.getStatusAsync();
+            if (!status.isLoaded) return false;
+
             await soundRef.current.pauseAsync();
             setPlaybackState(prev => ({ ...prev, isPlaying: false, isPaused: true }));
 
@@ -418,6 +428,9 @@ export function useAudioRecorder() {
         try {
             if (!soundRef.current) return false;
 
+            const status = await soundRef.current.getStatusAsync();
+            if (!status.isLoaded) return false;
+
             await soundRef.current.playAsync();
             setPlaybackState(prev => ({ ...prev, isPlaying: true, isPaused: false }));
 
@@ -432,8 +445,11 @@ export function useAudioRecorder() {
     const stopPlayback = useCallback(async () => {
         try {
             if (soundRef.current) {
-                await soundRef.current.stopAsync();
-                await soundRef.current.unloadAsync();
+                const status = await soundRef.current.getStatusAsync();
+                if (status.isLoaded) {
+                    await soundRef.current.stopAsync();
+                    await soundRef.current.unloadAsync();
+                }
                 soundRef.current = null;
             }
 

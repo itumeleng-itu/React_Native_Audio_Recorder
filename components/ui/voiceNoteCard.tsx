@@ -1,8 +1,10 @@
 import { VoiceNote } from '@/hooks/use-audio-recorder';
-import React, { useState } from 'react';
-import { Alert, Pressable, Text, TextInput, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, ImageBackground, Pressable, Text, TextInput, View } from 'react-native';
 
-interface VoiceNoteCardProps {
+const bgImage = require('../../assets/images/back.png');
+
+type VoiceNoteCardProps = {
   note: VoiceNote;
   isPlaying: boolean;
   isPaused: boolean;
@@ -26,29 +28,19 @@ export default function VoiceNoteCard({
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(note.name);
 
-  const formattedDate = new Date(note.createdAt).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-
-  const formattedTime = new Date(note.createdAt).toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-
+  // calculate progress percentage
   const progress = note.duration > 0 ? (currentPosition / note.duration) * 100 : 0;
 
-  const handleSaveRename = () => {
+  function handleSaveRename() {
     if (editedName.trim()) {
       onRename(editedName.trim());
     } else {
       setEditedName(note.name);
     }
     setIsEditing(false);
-  };
+  }
 
-  const handleLongPress = () => {
+  function handleLongPress() {
     Alert.alert(
       'Options',
       '',
@@ -68,94 +60,114 @@ export default function VoiceNoteCard({
         },
       ]
     );
-  };
+  }
+
+  function handleEditPress() {
+    setIsEditing(true);
+  }
 
   return (
     <Pressable
       onLongPress={handleLongPress}
       delayLongPress={500}
-      className="bg-gray-50 rounded-2xl p-4 mb-3 border border-gray-200 active:bg-gray-100"
+      className="mb-4 rounded-2xl overflow-hidden"
     >
-      <View className="flex-row items-center">
-        {/* Play/Pause Button */}
-        <Pressable
-          onPress={onPlayPause}
-          className="w-12 h-12 rounded-full bg-gray-800 items-center justify-center mr-4 active:bg-gray-700"
-        >
-          {isPlaying ? (
-            // Pause icon
-            <View className="flex-row">
-              <View className="w-1 h-4 bg-white rounded mr-1" />
-              <View className="w-1 h-4 bg-white rounded" />
+      <ImageBackground 
+        source={bgImage} 
+        className="w-full"
+        style={{ minHeight: 180 }}
+        imageStyle={{ borderRadius: 16 }}
+      >
+        <View className="p-4 flex-1">
+          {/* Recording Name */}
+          <View className="bg-white/90 rounded-full px-4 py-2 self-start mb-4">
+            {isEditing ? (
+              <TextInput
+                className="text-sm font-semibold text-gray-800"
+                value={editedName}
+                onChangeText={setEditedName}
+                onBlur={handleSaveRename}
+                onSubmitEditing={handleSaveRename}
+                autoFocus
+                selectTextOnFocus
+              />
+            ) : (
+              <Text className="text-sm font-semibold text-gray-800" numberOfLines={1}>
+                {note.name}
+              </Text>
+            )}
+          </View>
+
+          {/* Spacer */}
+          <View className="flex-1" />
+
+          {/* Progress Bar with Timestamps */}
+          <View className="mb-4">
+            {/* Timestamps */}
+            <View className="flex-row justify-between mb-1">
+              <Text className="text-xs text-white font-mono">
+                {isPlaying || isPaused ? formatDuration(currentPosition) : '00:00'}
+              </Text>
+              <Text className="text-xs text-white font-mono">
+                {formatDuration(note.duration)}
+              </Text>
             </View>
-          ) : (
-            // Play icon
-            <View 
-              className="w-0 h-0 ml-1"
-              style={{
-                borderLeftWidth: 10,
-                borderTopWidth: 6,
-                borderBottomWidth: 6,
-                borderLeftColor: 'white',
-                borderTopColor: 'transparent',
-                borderBottomColor: 'transparent',
-              }}
-            />
-          )}
-        </Pressable>
 
-        {/* Note Info */}
-        <View className="flex-1">
-          {isEditing ? (
-            <TextInput
-              className="text-base font-semibold text-gray-800 bg-white border border-gray-300 rounded-lg px-2 py-1 -my-1"
-              value={editedName}
-              onChangeText={setEditedName}
-              onBlur={handleSaveRename}
-              onSubmitEditing={handleSaveRename}
-              autoFocus
-              selectTextOnFocus
-            />
-          ) : (
-            <Text className="text-base font-semibold text-gray-800" numberOfLines={1}>
-              {note.name}
-            </Text>
-          )}
-          
-          <View className="flex-row items-center mt-1">
-            <Text className="text-xs text-gray-500">{formattedDate}</Text>
-            <Text className="text-xs text-gray-400 mx-1">•</Text>
-            <Text className="text-xs text-gray-500">{formattedTime}</Text>
+            {/* Progress Bar */}
+            <View className="h-1 bg-white/40 rounded-full overflow-hidden">
+              <View 
+                className="h-full bg-blue-500 rounded-full"
+                style={{ width: `${progress}%` }}
+              />
+            </View>
+          </View>
+
+          {/* Play Button and Edit */}
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1" />
+            
+            {/* Play Button */}
+            <Pressable
+              onPress={onPlayPause}
+              className="bg-white rounded-full px-6 py-2 flex-row items-center active:bg-gray-100"
+            >
+              {isPlaying ? (
+                <>
+                  <View className="flex-row mr-2">
+                    <View className="w-1 h-3 bg-gray-800 rounded mr-0.5" />
+                    <View className="w-1 h-3 bg-gray-800 rounded" />
+                  </View>
+                  <Text className="text-sm font-semibold text-gray-800">Pause</Text>
+                </>
+              ) : (
+                <>
+                  <View 
+                    className="mr-2"
+                    style={{
+                      width: 0,
+                      height: 0,
+                      borderLeftWidth: 8,
+                      borderTopWidth: 5,
+                      borderBottomWidth: 5,
+                      borderLeftColor: '#1f2937',
+                      borderTopColor: 'transparent',
+                      borderBottomColor: 'transparent',
+                    }}
+                  />
+                  <Text className="text-sm font-semibold text-gray-800">Play</Text>
+                </>
+              )}
+            </Pressable>
+
+            <View className="flex-1 items-end">
+              {/* Edit Recording */}
+              <Pressable onPress={handleEditPress}>
+                <Text className="text-xs text-white underline">Edit Recording</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
-
-        {/* Duration */}
-        <View className="items-end">
-          <Text className="text-sm font-mono text-gray-600">
-            {isPlaying || isPaused 
-              ? `${formatDuration(currentPosition)} / ${formatDuration(note.duration)}`
-              : formatDuration(note.duration)
-            }
-          </Text>
-          {(isPlaying || isPaused) && (
-            <Text className="text-xs text-gray-400 mt-1">
-              {isPaused ? 'Paused' : 'Playing'}
-            </Text>
-          )}
-        </View>
-      </View>
-
-      {/* Progress Bar */}
-      {(isPlaying || isPaused) && (
-        <View className="mt-3">
-          <View className="h-1 bg-gray-200 rounded-full overflow-hidden">
-            <View 
-              className="h-full bg-gray-800 rounded-full"
-              style={{ width: `${progress}%` }}
-            />
-          </View>
-        </View>
-      )}
+      </ImageBackground>
     </Pressable>
   );
 }
