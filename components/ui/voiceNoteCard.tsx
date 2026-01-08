@@ -1,6 +1,6 @@
 import { VoiceNote } from '@/hooks/use-audio-recorder';
-import { useState } from 'react';
-import { Alert, ImageBackground, Pressable, Text, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Animated, Easing, ImageBackground, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 const bgImage = require('../../assets/images/back.png');
 
@@ -28,8 +28,70 @@ export default function VoiceNoteCard({
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(note.name);
 
+  // Waveform animation
+  const BAR_COUNT = 15;
+  const MIN_BAR = 4;
+  const MAX_BAR = 20;
+  
+  const barsRef = useRef<Animated.Value[]>(
+    Array.from({ length: BAR_COUNT }, () => new Animated.Value(MIN_BAR))
+  ).current;
+  
+  const waveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // calculate progress percentage
   const progress = note.duration > 0 ? (currentPosition / note.duration) * 100 : 0;
+
+  // Start/stop waveform animation based on playback state
+  useEffect(() => {
+    if (isPlaying) {
+      startWave();
+    } else {
+      stopWave();
+    }
+    
+    return () => {
+      if (waveIntervalRef.current) {
+        clearInterval(waveIntervalRef.current);
+      }
+    };
+  }, [isPlaying]);
+
+  function startWave() {
+    if (waveIntervalRef.current) {
+      clearInterval(waveIntervalRef.current);
+    }
+
+    waveIntervalRef.current = setInterval(() => {
+      const anims = barsRef.map((v) =>
+        Animated.timing(v, {
+          toValue: Math.random() * (MAX_BAR - MIN_BAR) + MIN_BAR,
+          duration: 140,
+          easing: Easing.linear,
+          useNativeDriver: false,
+        })
+      );
+      Animated.parallel(anims).start();
+    }, 150);
+  }
+
+  function stopWave() {
+    if (waveIntervalRef.current) {
+      clearInterval(waveIntervalRef.current);
+      waveIntervalRef.current = null;
+    }
+    
+    // Collapse bars back to minimum
+    const anims = barsRef.map((v) =>
+      Animated.timing(v, {
+        toValue: MIN_BAR,
+        duration: 200,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: false,
+      })
+    );
+    Animated.parallel(anims).start();
+  }
 
   function handleSaveRename() {
     if (editedName.trim()) {
@@ -75,7 +137,7 @@ export default function VoiceNoteCard({
       <ImageBackground 
         source={bgImage} 
         className="w-full"
-        style={{ minHeight: 180 }}
+        style={{ minHeight: 200 }}
         imageStyle={{ borderRadius: 16 }}
       >
         <View className="p-4 flex-1">
@@ -97,30 +159,27 @@ export default function VoiceNoteCard({
               </Text>
             )}
           </View>
+          <View className="flex-1" />
+          {/* Waveform Animation - shows when playing */}
+          {(isPlaying || isPaused) && (
+            <View className="flex-row items-center justify-center my-2">
+              {barsRef.map((val, i) => (
+                <Animated.View
+                  key={i}
+                  style={[
+                    styles.bar,
+                    { height: val },
+                    i === BAR_COUNT - 1 && { marginRight: 0 },
+                  ]}
+                />
+              ))}
+            </View>
+          )}
 
           {/* Spacer */}
           <View className="flex-1" />
 
-          {/* Progress Bar with Timestamps */}
-          <View className="mb-4">
-            {/* Timestamps */}
-            <View className="flex-row justify-between mb-1">
-              <Text className="text-xs text-white font-mono">
-                {isPlaying || isPaused ? formatDuration(currentPosition) : '00:00'}
-              </Text>
-              <Text className="text-xs text-white font-mono">
-                {formatDuration(note.duration)}
-              </Text>
-            </View>
-
-            {/* Progress Bar */}
-            <View className="h-1 bg-white/40 rounded-full overflow-hidden">
-              <View 
-                className="h-full bg-blue-500 rounded-full"
-                style={{ width: `${progress}%` }}
-              />
-            </View>
-          </View>
+          
 
           {/* Play Button and Edit */}
           <View className="flex-row items-center justify-between">
@@ -159,15 +218,18 @@ export default function VoiceNoteCard({
               )}
             </Pressable>
 
-            <View className="flex-1 items-end">
-              {/* Edit Recording */}
-              <Pressable onPress={handleEditPress}>
-                <Text className="text-xs text-white underline">Edit Recording</Text>
-              </Pressable>
-            </View>
           </View>
         </View>
       </ImageBackground>
     </Pressable>
   );
 }
+
+const styles = StyleSheet.create({
+  bar: {
+    width: 4,
+    marginHorizontal: 2,
+    backgroundColor: '#ffffff',
+    borderRadius: 2,
+  },
+});

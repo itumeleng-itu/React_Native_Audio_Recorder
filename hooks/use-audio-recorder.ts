@@ -239,6 +239,10 @@ export function useAudioRecorder() {
                 durationIntervalRef.current = null;
             }
 
+            // Get recording status BEFORE stopping (to capture duration)
+            const status = await recordingRef.current.getStatusAsync();
+            const recordedDuration = status.durationMillis || recordingState.duration || 0;
+
             // Stop recording
             await recordingRef.current.stopAndUnloadAsync();
 
@@ -247,9 +251,8 @@ export function useAudioRecorder() {
                 allowsRecordingIOS: false,
             });
 
-            // Get recording URI and status
+            // Get recording URI
             const uri = recordingRef.current.getURI();
-            const status = await recordingRef.current.getStatusAsync();
 
             if (!uri) {
                 setError('Recording failed - no audio file created');
@@ -275,7 +278,7 @@ export function useAudioRecorder() {
                 id,
                 name: noteName || `Recording ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
                 uri: newUri,
-                duration: status.durationMillis || 0,
+                duration: recordedDuration,
                 createdAt: timestamp,
                 size: fileInfo.exists && 'size' in fileInfo ? fileInfo.size : undefined,
             };

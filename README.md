@@ -1,50 +1,43 @@
-# Welcome to your Expo app 👋
+# React Native Audio Recorder
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Simple React Native app for recording, saving and playing short voice notes.
 
-## Get started
+## Designs
+Figma wireframes and designs:  
+https://www.figma.com/design/jFPcLqc4tNRTVIgRVynHcv/Wireframe?node-id=0-1&m=dev&t=uBsvPFRp8muWYJjr-1
 
-1. Install dependencies
+## Features
+- Tap / hold to record with live waveform animation
+- Save recordings with optional name
+- Play / pause recordings with progress
+- List, rename and delete voice notes
 
-   ```bash
-   npm install
-   ```
+## Setup (Windows)
+1. Install dependencies:
+   - Node >= 16, Yarn or npm
+   - React Native CLI and Android/iOS toolchains
+2. From project root:
+   - npm install 
+3. Run on Android:
+   - npx react-native run-android
+   Run on iOS:
+   - npx pod-install && npx react-native run-ios
 
-2. Start the app
+## Useful Scripts
+- yarn start
+- yarn android
+- yarn ios
+- yarn test
 
-   ```bash
-   npx expo start
-   ```
+## Project Layout (key files)
+- components/ui/recordModal.tsx — recording modal + waveform
+- components/ui/WaveformBar.tsx — waveform component
+- components/ui/voiceNotesList.tsx — list of notes
+- hooks/use-audio-recorder.ts — recording & playback logic
 
-In the output, you'll find options to open the app in a
+## Troubleshooting
+- Playback error "sound is not loaded": ensure the playback implementation awaits sound loading before play. See `use-audio-recorder.ts` for sound load/play sequence.
+- If modal waveform doesn't animate during external playback, pass playback state into the modal and start the waveform timer when audio is playing.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Contributing
+Open an issue or submit a PR. Keep changes small and focused.
