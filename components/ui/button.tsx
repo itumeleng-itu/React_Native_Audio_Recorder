@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, Pressable, PressableProps } from 'react-native';
+import { Pressable, PressableProps, Text } from 'react-native';
 
 interface ButtonProps extends Omit<PressableProps, 'children'> {
   title: string;

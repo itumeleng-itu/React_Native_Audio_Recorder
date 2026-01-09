@@ -2,8 +2,9 @@ import EmptyState from "@/components/ui/emptyState";
 import RecordModal from "@/components/ui/recordModal";
 import VoiceNotesList from "@/components/ui/voiceNotesList";
 import { useAudioRecorder, VoiceNote } from "@/hooks/use-audio-recorder";
+import { router } from "expo-router";
 import { useCallback, useState } from "react";
-import { Alert, Text, View } from "react-native";
+import { Alert, Pressable, Text, View } from "react-native";
 import SegmentedControl from '../components/ui/tab';
 
 export default function Landing() {
@@ -30,36 +31,36 @@ export default function Landing() {
   // Get filtered notes based on search
   const filteredNotes = searchQuery ? searchVoiceNotes(searchQuery) : voiceNotes;
 
-  // Get recent notes (last 24 hours)
+  // Get recent notes (last 8 hours)
   const recentNotes = filteredNotes.filter(note => {
     const noteDate = new Date(note.createdAt);
     const dayAgo = new Date();
-    dayAgo.setHours(dayAgo.getHours() - 24);
+    dayAgo.setHours(dayAgo.getHours() - 8);
     return noteDate >= dayAgo;
   });
 
-  // Get history (older than 24 hours)
+  // Get history (older than 8 hours)
   const historyNotes = filteredNotes.filter(note => {
     const noteDate = new Date(note.createdAt);
     const dayAgo = new Date();
-    dayAgo.setHours(dayAgo.getHours() - 24);
+    dayAgo.setHours(dayAgo.getHours() - 8);
     return noteDate < dayAgo;
   });
 
-  const displayedNotes = tabIndex === 0 ? recentNotes : historyNotes;
+  const displayedNotes = tabIndex === 0 ? recentNotes : historyNotes;  //this shows recent notes in the recent tabs(recorded less than 8hrs ago): history(recorded more than 8hrs ago)
 
   function handleOpenModal(): void {
     setModalVisible(true);
-  }
+  } //pop up modal when user clicks "Record note" button
 
   function handleCloseModal() {
     setModalVisible(false);
-  }
+  } //close modal when user clicks "Record note" button
 
   const handleRecordingSaved = useCallback((voiceNote: VoiceNote) => {
     // Refresh the list
     loadVoiceNotes();
-  }, [loadVoiceNotes]);
+  }, [loadVoiceNotes]); //
 
   const handlePlayPause = useCallback(async (noteId: string) => {
     if (currentlyPlayingId === noteId) {
@@ -99,12 +100,21 @@ export default function Landing() {
 
   return (
     <View className="flex-1 bg-white px-6 pt-12">
-      <SegmentedControl 
-        segments={['Recent', 'History']}
-        selectedIndex={tabIndex}
-        onChange={(index) => setTabIndex(index)}
-        className="w-60 mt-8"
-      />
+      {/* Header with tabs and help button */}
+      <View className="flex-row items-center justify-between mt-8">
+        <SegmentedControl 
+          segments={['Recent', 'History']}
+          selectedIndex={tabIndex}
+          onChange={(index) => setTabIndex(index)}
+          className="w-60"
+        />
+        <Pressable 
+          onPress={() => router.push('/feedback')}
+          className="w-10 h-10 rounded-full bg-gray-100 items-center justify-center active:bg-gray-200"
+        >
+          <Text className="text-lg">?</Text>
+        </Pressable>
+      </View>
 
       {/*conditional rendering, state has a recording and no recording*/}
       <View className="flex-1 mt-8">

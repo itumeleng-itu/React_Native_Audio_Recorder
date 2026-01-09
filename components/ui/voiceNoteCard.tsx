@@ -142,7 +142,7 @@ export default function VoiceNoteCard({
       >
         <View className="p-4 flex-1">
           {/* Recording Name */}
-          <View className="bg-white/90 rounded-full px-4 py-2 self-start mb-4">
+          <View className="bg-white/90 rounded-full px-4 py-2 self-start mb-2">
             {isEditing ? (
               <TextInput
                 className="text-sm font-semibold text-gray-800"
@@ -159,6 +159,29 @@ export default function VoiceNoteCard({
               </Text>
             )}
           </View>
+
+          {/* Date, Time, and Duration */}
+          <View className="flex-row items-center mb-2">
+            <Text className="text-xs text-white/80">
+              {new Date(note.createdAt).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              })}
+            </Text>
+            <Text className="text-xs text-white/60 mx-1">•</Text>
+            <Text className="text-xs text-white/80">
+              {new Date(note.createdAt).toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </Text>
+            <Text className="text-xs text-white/60 mx-1">•</Text>
+            <Text className="text-xs text-white/80 font-mono">
+              {formatDuration(note.duration)}
+            </Text>
+          </View>
+
           <View className="flex-1" />
           {/* Waveform Animation - shows when playing */}
           {(isPlaying || isPaused) && (

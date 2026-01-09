@@ -1,34 +1,19 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio, AVPlaybackStatus } from 'expo-av';
-import * as FileSystem from 'expo-file-system/legacy';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 // Types
-export interface VoiceNote {
-    id: string;
-    name: string;
-    uri: string;
-    duration: number; // in milliseconds
-    createdAt: string;
-    size?: number;
-}
+import { PlaybackState, RecordingState, VoiceNote } from '@/types/audio';
 
-export interface RecordingState {
-    isRecording: boolean;
-    isPaused: boolean;
-    duration: number; // in milliseconds
-}
+// Services
+import * as PlaybackService from '@/services/playback-service';
+import * as RecordingService from '@/services/recording-service';
+import * as StorageService from '@/services/storage-service';
 
-export interface PlaybackState {
-    isPlaying: boolean;
-    isPaused: boolean;
-    currentPosition: number; // in milliseconds
-    duration: number; // in milliseconds
-    playbackRate: number;
-}
+// Utils
+import { formatDuration, generateDefaultName, generateRecordingId } from '@/utils/audio-utils';
 
-const VOICE_NOTES_KEY = 'voice_notes';
-const RECORDINGS_DIR = `${FileSystem.documentDirectory}recordings/`;
+// Re-export types for convenience
+export { PlaybackState, RecordingState, VoiceNote };
 
 export function useAudioRecorder() {
     // Recording state
@@ -58,18 +43,13 @@ export function useAudioRecorder() {
     const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const currentlyPlayingId = useRef<string | null>(null);
 
-    // Initialize - ensure recordings directory exists & load saved notes
+    // Initialize storage and load notes
     useEffect(() => {
         async function initialize() {
             try {
-                // Ensure recordings directory exists
-                const dirInfo = await FileSystem.getInfoAsync(RECORDINGS_DIR);
-                if (!dirInfo.exists) {
-                    await FileSystem.makeDirectoryAsync(RECORDINGS_DIR, { intermediates: true });
-                }
-
-                // Load saved voice notes
-                await loadVoiceNotes();
+                await StorageService.initializeStorage();
+                const notes = await StorageService.loadVoiceNotesFromStorage();
+                setVoiceNotes(notes);
             } catch (err) {
                 console.error('Initialization error:', err);
                 setError('Failed to initialize audio recorder');
@@ -82,53 +62,16 @@ export function useAudioRecorder() {
 
         // Cleanup on unmount
         return () => {
-            if (durationIntervalRef.current) {
-                clearInterval(durationIntervalRef.current);
-            }
-            if (soundRef.current) {
-                soundRef.current.unloadAsync();
-            }
+            if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
+            if (soundRef.current) soundRef.current.unloadAsync();
         };
-    }, []);
-
-    // Request permissions
-    const requestPermissions = useCallback(async (): Promise<boolean> => {
-        try {
-            const { status } = await Audio.requestPermissionsAsync();
-            if (status !== 'granted') {
-                setError('Microphone permission is required to record audio');
-                return false;
-            }
-
-            // Configure audio mode for recording
-            await Audio.setAudioModeAsync({
-                allowsRecordingIOS: true,
-                playsInSilentModeIOS: true,
-            });
-
-            return true;
-        } catch (err) {
-            console.error('Permission error:', err);
-            setError('Failed to request microphone permission');
-            return false;
-        }
     }, []);
 
     // Load voice notes from storage
     const loadVoiceNotes = useCallback(async () => {
         try {
-            const stored = await AsyncStorage.getItem(VOICE_NOTES_KEY);
-            if (stored) {
-                const notes: VoiceNote[] = JSON.parse(stored);
-                // Verify files still exist
-                const validNotes = await Promise.all(
-                    notes.map(async (note) => {
-                        const fileInfo = await FileSystem.getInfoAsync(note.uri);
-                        return fileInfo.exists ? note : null;
-                    })
-                );
-                setVoiceNotes(validNotes.filter((n): n is VoiceNote => n !== null));
-            }
+            const notes = await StorageService.loadVoiceNotesFromStorage();
+            setVoiceNotes(notes);
         } catch (err) {
             console.error('Load notes error:', err);
             setError('Failed to load voice notes');
@@ -138,11 +81,28 @@ export function useAudioRecorder() {
     // Save voice notes to storage
     const saveVoiceNotes = useCallback(async (notes: VoiceNote[]) => {
         try {
-            await AsyncStorage.setItem(VOICE_NOTES_KEY, JSON.stringify(notes));
+            await StorageService.saveVoiceNotesToStorage(notes);
             setVoiceNotes(notes);
         } catch (err) {
             console.error('Save notes error:', err);
             setError('Failed to save voice notes');
+        }
+    }, []);
+
+    // Request permissions
+    const requestPermissions = useCallback(async (): Promise<boolean> => {
+        try {
+            const granted = await RecordingService.requestMicrophonePermission();
+            if (!granted) {
+                setError('Microphone permission is required to record audio');
+                return false;
+            }
+            await RecordingService.configureAudioForRecording();
+            return true;
+        } catch (err) {
+            console.error('Permission error:', err);
+            setError('Failed to request microphone permission');
+            return false;
         }
     }, []);
 
@@ -151,39 +111,27 @@ export function useAudioRecorder() {
         try {
             setError(null);
 
-            // Request permissions first
             const hasPermission = await requestPermissions();
             if (!hasPermission) return false;
 
             // Stop any existing playback
             if (soundRef.current) {
-                await soundRef.current.stopAsync();
-                await soundRef.current.unloadAsync();
+                await PlaybackService.stopSound(soundRef.current);
                 soundRef.current = null;
             }
 
             // Create and start recording
-            const { recording } = await Audio.Recording.createAsync(
-                Audio.RecordingOptionsPresets.HIGH_QUALITY
-            );
-
+            const recording = await RecordingService.createRecording();
             recordingRef.current = recording;
 
-            // Start duration tracking
-            setRecordingState({
-                isRecording: true,
-                isPaused: false,
-                duration: 0,
-            });
+            // Update state and start duration tracking
+            setRecordingState({ isRecording: true, isPaused: false, duration: 0 });
 
             durationIntervalRef.current = setInterval(async () => {
                 if (recordingRef.current) {
-                    const status = await recordingRef.current.getStatusAsync();
+                    const status = await RecordingService.getRecordingStatus(recordingRef.current);
                     if (status.isRecording) {
-                        setRecordingState(prev => ({
-                            ...prev,
-                            duration: status.durationMillis,
-                        }));
+                        setRecordingState(prev => ({ ...prev, duration: status.durationMillis }));
                     }
                 }
             }, 100);
@@ -200,10 +148,8 @@ export function useAudioRecorder() {
     const pauseRecording = useCallback(async (): Promise<boolean> => {
         try {
             if (!recordingRef.current) return false;
-
-            await recordingRef.current.pauseAsync();
+            await RecordingService.pauseRecording(recordingRef.current);
             setRecordingState(prev => ({ ...prev, isPaused: true }));
-
             return true;
         } catch (err) {
             console.error('Pause recording error:', err);
@@ -216,10 +162,8 @@ export function useAudioRecorder() {
     const resumeRecording = useCallback(async (): Promise<boolean> => {
         try {
             if (!recordingRef.current) return false;
-
-            await recordingRef.current.startAsync();
+            await RecordingService.resumeRecording(recordingRef.current);
             setRecordingState(prev => ({ ...prev, isPaused: false }));
-
             return true;
         } catch (err) {
             console.error('Resume recording error:', err);
@@ -239,61 +183,41 @@ export function useAudioRecorder() {
                 durationIntervalRef.current = null;
             }
 
-            // Get recording status BEFORE stopping (to capture duration)
-            const status = await recordingRef.current.getStatusAsync();
+            // Get duration before stopping
+            const status = await RecordingService.getRecordingStatus(recordingRef.current);
             const recordedDuration = status.durationMillis || recordingState.duration || 0;
 
             // Stop recording
-            await recordingRef.current.stopAndUnloadAsync();
-
-            // Reset audio mode
-            await Audio.setAudioModeAsync({
-                allowsRecordingIOS: false,
-            });
-
-            // Get recording URI
-            const uri = recordingRef.current.getURI();
+            const uri = await RecordingService.stopRecording(recordingRef.current);
+            await RecordingService.resetAudioMode();
 
             if (!uri) {
                 setError('Recording failed - no audio file created');
                 return null;
             }
 
-            // Generate unique filename and move to recordings directory
-            const timestamp = new Date().toISOString();
-            const id = `recording_${Date.now()}`;
+            // Generate ID and move to storage
+            const id = generateRecordingId();
             const filename = `${id}.m4a`;
-            const newUri = `${RECORDINGS_DIR}${filename}`;
+            const newUri = await StorageService.moveRecordingToStorage(uri, filename);
+            const size = await StorageService.getFileSize(newUri);
 
-            await FileSystem.moveAsync({
-                from: uri,
-                to: newUri,
-            });
-
-            // Get file info for size
-            const fileInfo = await FileSystem.getInfoAsync(newUri);
-
-            // Create voice note object
+            // Create voice note
             const voiceNote: VoiceNote = {
                 id,
-                name: noteName || `Recording ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
+                name: noteName || generateDefaultName(),
                 uri: newUri,
                 duration: recordedDuration,
-                createdAt: timestamp,
-                size: fileInfo.exists && 'size' in fileInfo ? fileInfo.size : undefined,
+                createdAt: new Date().toISOString(),
+                size,
             };
 
             // Save to storage
-            const updatedNotes = [voiceNote, ...voiceNotes];
-            await saveVoiceNotes(updatedNotes);
+            await saveVoiceNotes([voiceNote, ...voiceNotes]);
 
-            // Reset recording state
+            // Reset state
             recordingRef.current = null;
-            setRecordingState({
-                isRecording: false,
-                isPaused: false,
-                duration: 0,
-            });
+            setRecordingState({ isRecording: false, isPaused: false, duration: 0 });
 
             return voiceNote;
         } catch (err) {
@@ -301,7 +225,7 @@ export function useAudioRecorder() {
             setError('Failed to save recording');
             return null;
         }
-    }, [voiceNotes, saveVoiceNotes]);
+    }, [voiceNotes, saveVoiceNotes, recordingState.duration]);
 
     // Cancel recording without saving
     const cancelRecording = useCallback(async () => {
@@ -312,25 +236,37 @@ export function useAudioRecorder() {
             }
 
             if (recordingRef.current) {
-                await recordingRef.current.stopAndUnloadAsync();
-                const uri = recordingRef.current.getURI();
-                if (uri) {
-                    await FileSystem.deleteAsync(uri, { idempotent: true });
-                }
+                const uri = await RecordingService.stopRecording(recordingRef.current);
+                if (uri) await StorageService.deleteRecordingFile(uri);
                 recordingRef.current = null;
             }
 
-            await Audio.setAudioModeAsync({
-                allowsRecordingIOS: false,
-            });
-
-            setRecordingState({
-                isRecording: false,
-                isPaused: false,
-                duration: 0,
-            });
+            await RecordingService.resetAudioMode();
+            setRecordingState({ isRecording: false, isPaused: false, duration: 0 });
         } catch (err) {
             console.error('Cancel recording error:', err);
+        }
+    }, []);
+
+    // Playback status update handler
+    const onPlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
+        if (!status.isLoaded) return;
+
+        setPlaybackState(prev => ({
+            ...prev,
+            isPlaying: status.isPlaying,
+            currentPosition: status.positionMillis,
+            duration: status.durationMillis || prev.duration,
+        }));
+
+        if (status.didJustFinish) {
+            setPlaybackState(prev => ({
+                ...prev,
+                isPlaying: false,
+                isPaused: false,
+                currentPosition: 0,
+            }));
+            currentlyPlayingId.current = null;
         }
     }, []);
 
@@ -347,21 +283,13 @@ export function useAudioRecorder() {
 
             // Stop any existing playback
             if (soundRef.current) {
-                try {
-                    const status = await soundRef.current.getStatusAsync();
-                    if (status.isLoaded) {
-                        await soundRef.current.stopAsync();
-                        await soundRef.current.unloadAsync();
-                    }
-                } catch (e) {
-                    // ignore errors when stopping
-                }
+                await PlaybackService.stopSound(soundRef.current);
                 soundRef.current = null;
             }
 
-            // Load and play the sound
-            const { sound } = await Audio.Sound.createAsync(
-                { uri: note.uri },
+            // Load and play sound
+            const sound = await PlaybackService.loadSound(
+                note.uri,
                 { shouldPlay: true, rate: playbackState.playbackRate },
                 onPlaybackStatusUpdate
             );
@@ -383,42 +311,14 @@ export function useAudioRecorder() {
             setError('Failed to play voice note');
             return false;
         }
-    }, [voiceNotes, playbackState.playbackRate]);
-
-    // Playback status update handler
-    const onPlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
-        if (!status.isLoaded) return;
-
-        setPlaybackState(prev => ({
-            ...prev,
-            isPlaying: status.isPlaying,
-            currentPosition: status.positionMillis,
-            duration: status.durationMillis || prev.duration,
-        }));
-
-        // Handle playback finished
-        if (status.didJustFinish) {
-            setPlaybackState(prev => ({
-                ...prev,
-                isPlaying: false,
-                isPaused: false,
-                currentPosition: 0,
-            }));
-            currentlyPlayingId.current = null;
-        }
-    }, []);
+    }, [voiceNotes, playbackState.playbackRate, onPlaybackStatusUpdate]);
 
     // Pause playback
     const pausePlayback = useCallback(async (): Promise<boolean> => {
         try {
             if (!soundRef.current) return false;
-
-            const status = await soundRef.current.getStatusAsync();
-            if (!status.isLoaded) return false;
-
-            await soundRef.current.pauseAsync();
+            await PlaybackService.pauseSound(soundRef.current);
             setPlaybackState(prev => ({ ...prev, isPlaying: false, isPaused: true }));
-
             return true;
         } catch (err) {
             console.error('Pause playback error:', err);
@@ -430,13 +330,8 @@ export function useAudioRecorder() {
     const resumePlayback = useCallback(async (): Promise<boolean> => {
         try {
             if (!soundRef.current) return false;
-
-            const status = await soundRef.current.getStatusAsync();
-            if (!status.isLoaded) return false;
-
-            await soundRef.current.playAsync();
+            await PlaybackService.playSound(soundRef.current);
             setPlaybackState(prev => ({ ...prev, isPlaying: true, isPaused: false }));
-
             return true;
         } catch (err) {
             console.error('Resume playback error:', err);
@@ -448,11 +343,7 @@ export function useAudioRecorder() {
     const stopPlayback = useCallback(async () => {
         try {
             if (soundRef.current) {
-                const status = await soundRef.current.getStatusAsync();
-                if (status.isLoaded) {
-                    await soundRef.current.stopAsync();
-                    await soundRef.current.unloadAsync();
-                }
+                await PlaybackService.stopSound(soundRef.current);
                 soundRef.current = null;
             }
 
@@ -473,10 +364,8 @@ export function useAudioRecorder() {
     const seekTo = useCallback(async (positionMillis: number): Promise<boolean> => {
         try {
             if (!soundRef.current) return false;
-
-            await soundRef.current.setPositionAsync(positionMillis);
+            await PlaybackService.seekTo(soundRef.current, positionMillis);
             setPlaybackState(prev => ({ ...prev, currentPosition: positionMillis }));
-
             return true;
         } catch (err) {
             console.error('Seek error:', err);
@@ -488,9 +377,8 @@ export function useAudioRecorder() {
     const setPlaybackRate = useCallback(async (rate: number): Promise<boolean> => {
         try {
             if (soundRef.current) {
-                await soundRef.current.setRateAsync(rate, true);
+                await PlaybackService.setPlaybackRate(soundRef.current, rate);
             }
-
             setPlaybackState(prev => ({ ...prev, playbackRate: rate }));
             return true;
         } catch (err) {
@@ -505,15 +393,11 @@ export function useAudioRecorder() {
             const note = voiceNotes.find(n => n.id === noteId);
             if (!note) return false;
 
-            // Stop playback if this note is playing
             if (currentlyPlayingId.current === noteId) {
                 await stopPlayback();
             }
 
-            // Delete file
-            await FileSystem.deleteAsync(note.uri, { idempotent: true });
-
-            // Update storage
+            await StorageService.deleteRecordingFile(note.uri);
             const updatedNotes = voiceNotes.filter(n => n.id !== noteId);
             await saveVoiceNotes(updatedNotes);
 
@@ -532,7 +416,6 @@ export function useAudioRecorder() {
                 note.id === noteId ? { ...note, name: newName } : note
             );
             await saveVoiceNotes(updatedNotes);
-
             return true;
         } catch (err) {
             console.error('Rename error:', err);
@@ -544,20 +427,9 @@ export function useAudioRecorder() {
     // Search voice notes
     const searchVoiceNotes = useCallback((query: string): VoiceNote[] => {
         if (!query.trim()) return voiceNotes;
-
         const lowerQuery = query.toLowerCase();
-        return voiceNotes.filter(note =>
-            note.name.toLowerCase().includes(lowerQuery)
-        );
+        return voiceNotes.filter(note => note.name.toLowerCase().includes(lowerQuery));
     }, [voiceNotes]);
-
-    // Format duration for display (ms to MM:SS)
-    const formatDuration = useCallback((ms: number): string => {
-        const totalSeconds = Math.floor(ms / 1000);
-        const minutes = Math.floor(totalSeconds / 60);
-        const seconds = totalSeconds % 60;
-        return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    }, []);
 
     return {
         // State
