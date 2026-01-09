@@ -43,7 +43,7 @@ export default function VoiceNotesList({
 
       {/* Section Header */}
       <Text className="text-base font-semibold text-gray-800 mb-3">
-        your recent recordings
+        tap and hold a note to edit or delete.
       </Text>
 
       {/* Voice Notes List */}
